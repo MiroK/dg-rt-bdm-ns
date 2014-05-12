@@ -1,0 +1,11 @@
+This code is in support of the paper
+
+  Labeur, R.J. and Wells, G.N. Energy stable and momentum conserving
+  hybrid finite element method for the incompressible Navier–Stokes
+  equations. SIAM Journal on Scientific Computing, arXiV:1012.3722.
+
+The programs have been tested with the 1.0 release of the FEniCS suite
+of libraries (DOLFIN 1.0) See http://www.fenicsproject.org.
+
+The license under which the code is released is GNU LGPL Version 3.
+See http://www.gnu.org/licenses/.
