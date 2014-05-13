@@ -1,8 +1,5 @@
 '''Solving Kovasznay flow with [CR1]^2-DG0 element.'''
 
-# TODO test
-
-import matplotlib.pyplot as plt
 from dolfin import *
 
 # FFC options as in the original paper
@@ -72,7 +69,7 @@ for n in [16, 32, 64, 128]:
     bcs = [bc_u, bc_p]
 
     # Fixed point iteration
-    converged = False   
+    converged = False
     iter = 0
     err_u = []
     err_p = []

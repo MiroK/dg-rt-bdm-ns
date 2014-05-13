@@ -1,4 +1,6 @@
-'''Solving Kovasznay flow with Taylor-Hood P_{k+1} - P_{k} element.'''
+'''Solving Stokes flow with Scott-Vogelius penalty.'''
+
+# TODO test
 
 from dolfin import *
 
@@ -31,7 +33,7 @@ iter_max = 50
 prefix = 'data_th_kowasznay_%d.txt'
 
 # Loop over polynomial degrees
-for k in [1, 2, 3, 4]:
+for k in [4, 5]:
     error_u = []
     error_p = []
     error_div = []
@@ -45,18 +47,11 @@ for k in [1, 2, 3, 4]:
         h = mesh.hmin()
 
         V = VectorFunctionSpace(mesh, 'CG', k+1)
-        Q = FunctionSpace(mesh, 'CG', k)
-        M = MixedFunctionSpace([V, Q])
-
-        u, p = TrialFunctions(M)
-        v, q = TestFunctions(M)
-
-        # Solution at current iteration
-        Uh = Function(M)
+        u = TrialFunction(V)
+        v = TestFunction(V)
 
         # Solution at previous iteration
-        U0 = Function(M)
-        u0, p0 = split(U0)
+        u0 = Function()
 
         Re = Constant(Re)
         f = Constant((0., 0.))
