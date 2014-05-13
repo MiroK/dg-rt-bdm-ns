@@ -20,6 +20,36 @@ ylabels = ['$||u-u_h||_{L^2}$',
            '$||div u_h||_{L^2}$']
 
 
+def rate_plot(x, y, label=''):
+    'Plot log(x) vs. log(y)'
+    # Compute rate from least square fit to log(y) = p*log(x) + q
+    A = np.vstack([np.log(x), np.ones(len(x))]).T
+    p, q = la.lstsq(A, np.log(y))[0]
+
+    # Plot
+    if label:
+        label = '$%s$,' % label
+    plt.loglog(x, y, '*-', label=' '.join([label, '$p=%.2f$' % p]))
+
+
+class RateFigure(object):
+    'Context manager for figure with (multiple) rate plot(s).'
+    def __init__(self, prefix, ylabel):
+        fig = plt.figure()
+        fig.canvas.set_window_title(prefix)
+        plt.ylabel(ylabel)
+        self.fig = fig
+
+    def __enter__(self):
+        return self.fig
+
+    def __exit__(self, type, value, traceback):
+        plt.xlabel('$h$')
+        plt.axis('tight')
+        plt.legend(loc='best')
+        plt.show()
+
+
 def plot_data(prefix, ylabels=ylabels):
     '''Group and plot the data from the dataset given by prefix'''
     # Get datasets file based on prefix
@@ -32,53 +62,39 @@ def plot_data(prefix, ylabels=ylabels):
           for f in data_set]
     num_ks = len(filter(bool, ks))
 
+    # Group `column` plots for all k
     if num_ks:
         ks = map(lambda mo: mo.string, ks)
 
         # Load the data
-        assert len(data_set) == len(ks)
+        assert len(data_set) == num_ks
         data = [np.loadtxt(f) for f in data_set]
 
+        # Verify that all data in data sets have same number of columns
         n_cols = list(set(d.shape[1] for d in data))
         assert len(n_cols) == 1
         n_cols = n_cols[0]
 
+        # Check that there is label for all but the first column
+        assert (n_cols - 1) == len(ylabels)
+
+        # Group for each column
         for col, ylabel in zip(range(1, n_cols), ylabels):
-            fig = plt.figure()
-            fig.suptitle(prefix)
-
-            for d, k in zip(data, ks):
-                plt.loglog(d[:, 0], d[:, col], '*-', label=k)
-
-                A = np.vstack([np.log(d[:, 0]),
-                                  np.ones(len(d[:, 0]))]).T
-                print A
-                print la.lstsq(A, np.log(d[:, col]))[0]
-
-            plt.xlabel('$h$')
-            plt.ylabel(ylabel)
-            plt.axis('tight')
-            plt.legend(loc='best')
-
-
+            with RateFigure(prefix, ylabel) as fig:
+                for d, k in zip(data, ks):
+                    rate_plot(d[:, 0], d[:, col], k)
 
     # Plot single file with data
     else:
         data = np.loadtxt(data_set[0])
-        n_rows, n_cols = data.shape
+        n_cols = data.shape[1]
 
         assert (n_cols - 1) == len(ylabels)
 
         for col, ylabel in zip(range(1, n_cols), ylabels):
-            fig = plt.figure()
-            fig.suptitle(prefix)
-            plt.loglog(data[:, 0], data[:, col], '*-')
-            plt.xlabel('$h$')
-            plt.ylabel(ylabel)
-            plt.axis('tight')
+            with RateFigure(prefix, ylabel) as fig:
+                rate_plot(data[:, 0], data[:, col])
 
-
-    plt.show()
 
 def main(argv):
     'Plot dataset with prefix specified by command line argument.'
