@@ -1,6 +1,6 @@
 '''Solving Stokes flow with Scott-Vogelius penalty.'''
 
-# TODO test
+# TODO test: Can k be smaller than 4. Is there a rule for alpha
 
 from dolfin import *
 
@@ -9,28 +9,29 @@ parameters['form_compiler']['cpp_optimize']   = True
 parameters['form_compiler']['optimize']       = True
 parameters['form_compiler']['representation'] = 'quadrature'
 
-# Exact solution depends on Re
-Re = 40.
+f = Expression(('pi*pi*sin(pi*x[1])-2*pi*cos(2*pi*x[0])',
+                'pi*pi*cos(pi*x[0])'))
 
-A = Re/2 - pow(pow(Re/2, 2) + pow(2*pi, 2), 0.5)
-u_exact = Expression(('1-exp(A*x[0])*cos(2*pi*x[1])',
-                      'A*exp(A*x[0])*sin(2*pi*x[1])/(2*pi)'), A=A, degree=8)
-p_exact = Expression('-0.5*(1-exp(2*A*x[0]))', A=A, degree=8)
+# Exact solution
+u_exact = Expression(('sin(pi*x[1])','cos(pi*x[0])'), degree=8)
+p_exact = Expression('sin(2*pi*x[0])', degree=8)
+Re = 1.
 
 # Geometry parameters
-x_min, x_max = -0.5, 1.0
-y_min, y_max = -0.5, 1.5
+x_min, x_max = 0.0, 1.0
+y_min, y_max = 0.0, 1.0
 
 def corners(x, on_boundary):
     return any(near(x[0], X) and near(x[1], Y)\
             for X in [x_min, x_max] for Y in [y_min, y_max])
 
-# Picard fixed point iteration parameters
-tol = 1.e-4
+# Scott-Vogelius iteration parameters
+r = 1.e3
+tol = 1.e-8
 iter_max = 50
 
 # Template for files with results
-prefix = 'data_th_kowasznay_%d.txt'
+prefix = 'data_scott_vogelius_stokes_%d.txt'
 
 # Loop over polynomial degrees
 for k in [4, 5]:
@@ -46,34 +47,33 @@ for k in [4, 5]:
         mesh = RectangleMesh(x_min, y_min, x_max, y_max, M, N)
         h = mesh.hmin()
 
-        V = VectorFunctionSpace(mesh, 'CG', k+1)
+        # Solve only for velocity. Pressure is obtained in postprocessing
+        V = VectorFunctionSpace(mesh, 'CG', k)
         u = TrialFunction(V)
         v = TestFunction(V)
 
-        # Solution at previous iteration
-        u0 = Function()
+        # Penalty parameter
+        r = Constant(r)
+        # Vector for divergence term
+        w = Function(V)
+
+        # Current and previous solutions
+        Uh = Function(V)
+        U0 = Function(V)
 
         Re = Constant(Re)
-        f = Constant((0., 0.))
+        a = 1./Re*inner(grad(u), grad(v))*dx + r*inner(div(u), div(v))*dx
+        L = inner(f, v)*dx - inner(div(w), div(v))*dx
 
-        F = inner(dot(grad(u), u0), v)*dx + 1./Re*inner(grad(u), grad(v))*dx +\
-                inner(div(v), p)*dx + inner(div(u), q)*dx + inner(f, v)*dx
-        a, L = system(F)
+        bc_u = DirichletBC(V, u_exact, DomainBoundary())
 
-        bc_u = DirichletBC(M.sub(0), u_exact, DomainBoundary())
-        bc_p = DirichletBC(M.sub(1), p_exact, corners, 'pointwise')
-        bcs = [bc_u, bc_p]
-
-        # Fixed point iteration
+        # S-V loop
         converged = False
         iter = 0
-        err_u = []
-        err_p = []
-        err_div = []
 
         solver = LUSolver('mumps')
         while converged == False and iter < iter_max:
-            A, b = assemble_system(a, L, bcs)
+            A, b = assemble_system(a, L, bc_u)
 
             iter += 1
 
@@ -85,45 +85,37 @@ for k in [4, 5]:
             # Solve variational problem
             solver.solve(A, Uh.vector(), b)
 
-            # Relaxation
-            Uh.vector()[:]=(U0.vector()[:] + Uh.vector()[:])/2.
-
-            # Get solution sub-functions
-            uh = Uh.split()[0]
-            ph = Uh.split()[1]
-
-            # Compute L2 velocity error
-            u_diff = uh - u_exact
-            u_error = sqrt(abs(assemble(dot(u_diff, u_diff)*dx, mesh=mesh)))
-            err_u.append(u_error)
-
-            # Compute L2 pressure error
-            p_diff = ph- p_exact
-            p_error = sqrt(abs(assemble(p_diff*p_diff*dx, mesh=mesh)))
-            err_p.append(p_error)
-
-            # Compute divergence error
-            err_div.append(sqrt(abs(assemble(div(uh)*div(uh)*dx, mesh=mesh))))
+            # Updata w
+            w.vector().axpy(float(r), Uh.vector())
 
             # Stopping criteria
             e = None
             if iter < 2:
                 converged = False
             else:
-                e1 = err_u[-1]
-                e2 = err_u[-2]
-                e = abs(e1 - e2)/(e1 + e2)
+                e = (Uh.vector() - U0.vector()).norm('l2')
                 converged = e < tol
+            print '\t', e
 
-            print '\terror_u     = ', err_u[-1]
-            print '\terror_p     = ', err_p[-1]
-            print '\terror_div_u = ', err_div[-1]
-            print '\te           = ', e
+        # Compute L2 velocity error
+        u_diff = Uh - u_exact
+        u_error = sqrt(abs(assemble(dot(u_diff, u_diff)*dx, mesh=mesh)))
+
+        # Compute the pressure and its L2 error
+        Q = FunctionSpace(mesh, 'DG', k-1)
+        bc_p = DirichletBC(Q, p_exact, corners, 'pointwise')
+        ph = project(div(w), Q, bc_p)
+
+        p_diff = ph- p_exact
+        p_error = sqrt(abs(assemble(p_diff*p_diff*dx, mesh=mesh)))
+
+        # Compute divergence error
+        div_error = sqrt(abs(assemble(div(Uh)*div(Uh)*dx, mesh=mesh)))
 
         # Store the norms for h
-        error_u.append(err_u[-1])
-        error_p.append(err_p[-1])
-        error_div.append(err_div[-1])
+        error_u.append(u_error)
+        error_p.append(p_error)
+        error_div.append(div_error)
         hs.append(h)
 
     # Store results to files
