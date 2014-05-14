@@ -26,19 +26,20 @@ def corners(x, on_boundary):
             for X in [x_min, x_max] for Y in [y_min, y_max])
 
 # Scott-Vogelius iteration parameters
-r = 1.e3
+r = 1.e3 # default value
 tol = 1.e-8
-iter_max = 50
+iter_max = 4
 
 # Template for files with results
 prefix = 'data_scott_vogelius_stokes_%d.txt'
 
 # Loop over polynomial degrees
-for k in [4, 5]:
+for k in [1, 2, 3, 4, 5]:
     error_u = []
     error_p = []
     error_div = []
     hs = []
+    penalties = []
 
     # Loop over meshes
     for n in [16, 32, 64, 128]:
@@ -68,34 +69,43 @@ for k in [4, 5]:
         bc_u = DirichletBC(V, u_exact, DomainBoundary())
 
         # S-V loop
-        converged = False
-        iter = 0
-
         solver = LUSolver('mumps')
-        while converged == False and iter < iter_max:
-            A, b = assemble_system(a, L, bc_u)
+        converged = False
+        while not converged:
+            print 'Using penalty parameter', float(r)
+            iter = 0
+            while iter < iter_max:
+                A, b = assemble_system(a, L, bc_u)
 
-            iter += 1
+                iter += 1
 
-            print iter
+                print iter
 
-            # Previous solution
-            U0.assign(Uh)
+                # Previous solution
+                U0.assign(Uh)
 
-            # Solve variational problem
-            solver.solve(A, Uh.vector(), b)
+                # Solve variational problem
+                solver.solve(A, Uh.vector(), b)
 
-            # Updata w
-            w.vector().axpy(float(r), Uh.vector())
+                # Updata w
+                w.vector().axpy(float(r), Uh.vector())
 
-            # Stopping criteria
-            e = None
-            if iter < 2:
-                converged = False
-            else:
-                e = (Uh.vector() - U0.vector()).norm('l2')
-                converged = e < tol
-            print '\t', e
+                # Stopping criteria
+                e = None
+                if iter < 2:
+                    converged = False
+                else:
+                    e = (Uh.vector() - U0.vector()).norm('l2')
+                    converged = e < tol
+                print '\t', e
+                if converged : break
+
+            # Run againg with new penalty parameter
+            r.assign(float(r)*10)
+            print 'Increased penalty parameter %g\n' % float(r)
+
+        # Store the final penalty and iteration count
+        penalties.append((float(r)/10, iter))
 
         # Compute L2 velocity error
         u_diff = Uh - u_exact
@@ -123,3 +133,8 @@ for k in [4, 5]:
     with open(data_file, 'w') as file:
         for row in zip(hs, error_u, error_p, error_div):
             file.write('%e %e %e %e\n' % row)
+
+    penalty_file = 'penalties_scott_vogelius_stokes_%d.txt' % k
+    with open(penalty_file, 'w') as file:
+        for h, (a, n) in zip(hs, penalties):
+            file.write('%e %e(%d)\n' % (h, a, n))
