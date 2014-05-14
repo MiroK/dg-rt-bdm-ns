@@ -5,15 +5,15 @@
 from dolfin import *
 
 # FFC options as in the original paper
-parameters['form_compiler']['cpp_optimize']   = True
-parameters['form_compiler']['optimize']       = True
+parameters['form_compiler']['cpp_optimize'] = True
+parameters['form_compiler']['optimize'] = True
 parameters['form_compiler']['representation'] = 'quadrature'
 
 f = Expression(('pi*pi*sin(pi*x[1])-2*pi*cos(2*pi*x[0])',
                 'pi*pi*cos(pi*x[0])'))
 
 # Exact solution
-u_exact = Expression(('sin(pi*x[1])','cos(pi*x[0])'), degree=8)
+u_exact = Expression(('sin(pi*x[1])', 'cos(pi*x[0])'), degree=8)
 p_exact = Expression('sin(2*pi*x[0])', degree=8)
 Re = 1.
 
@@ -21,13 +21,14 @@ Re = 1.
 x_min, x_max = 0.0, 1.0
 y_min, y_max = 0.0, 1.0
 
+
 def corners(x, on_boundary):
-    return any(near(x[0], X) and near(x[1], Y)\
-            for X in [x_min, x_max] for Y in [y_min, y_max])
+    return any(near(x[0], X) and near(x[1], Y)
+               for X in [x_min, x_max] for Y in [y_min, y_max])
 
 # Scott-Vogelius iteration parameters
-r = 1.e3     # default value of penalty paramater
-r_max = 1e12 # maximum value of penalty parameter
+r = 1.e3      # default value of penalty paramater
+r_max = 1e12  # maximum value of penalty parameter
 tol = 1.e-8
 iter_max = 4
 
@@ -55,7 +56,7 @@ for k in [1, 2, 3, 4, 5]:
         v = TestFunction(V)
 
         # Penalty parameter
-        r = Constant(r)
+        rho = Constant(r)
         # Vector for divergence term
         w = Function(V)
 
@@ -64,7 +65,7 @@ for k in [1, 2, 3, 4, 5]:
         U0 = Function(V)
 
         Re = Constant(Re)
-        a = 1./Re*inner(grad(u), grad(v))*dx + r*inner(div(u), div(v))*dx
+        a = 1./Re*inner(grad(u), grad(v))*dx + rho*inner(div(u), div(v))*dx
         L = inner(f, v)*dx - inner(div(w), div(v))*dx
 
         bc_u = DirichletBC(V, u_exact, DomainBoundary())
@@ -73,9 +74,9 @@ for k in [1, 2, 3, 4, 5]:
         solver = LUSolver('mumps')
         converged = False
         # Remember the default penalty value
-        r_ = float(r)
+        r_ = r
         while not converged and r_ < r_max:
-            print 'Using penalty parameter', float(r)
+            print 'Using penalty parameter %.2e\n' % r_
             iter = 0
             while iter < iter_max:
                 A, b = assemble_system(a, L, bc_u)
@@ -91,7 +92,7 @@ for k in [1, 2, 3, 4, 5]:
                 solver.solve(A, Uh.vector(), b)
 
                 # Updata w
-                w.vector().axpy(float(r), Uh.vector())
+                w.vector().axpy(float(rho), Uh.vector())
 
                 # Stopping criteria
                 e = None
@@ -101,12 +102,15 @@ for k in [1, 2, 3, 4, 5]:
                     e = (Uh.vector() - U0.vector()).norm('l2')
                     converged = e < tol
                 print '\t', e
-                if converged : break
+
+                if converged:
+                    break
 
             # Run againg with new penalty parameter
-            r_ *= 10
-            r.assign(r_)
-            print 'Increased penalty parameter %g\n' % r_
+            if not converged:
+                r_ *= 10
+                rho.assign(r_)
+                print 'Increased penalty parameter %.2e\n' % r_
 
         # Store the final penalty and iteration count
         penalties.append((r_/10, iter))
@@ -120,7 +124,7 @@ for k in [1, 2, 3, 4, 5]:
         bc_p = DirichletBC(Q, p_exact, corners, 'pointwise')
         ph = project(div(w), Q, bc_p)
 
-        p_diff = ph- p_exact
+        p_diff = ph - p_exact
         p_error = sqrt(abs(assemble(p_diff*p_diff*dx, mesh=mesh)))
 
         # Compute divergence error
