@@ -30,7 +30,7 @@ def corners(x, on_boundary):
 r = 1.e3      # default value of penalty paramater
 r_max = 1e12  # maximum value of penalty parameter
 tol = 1.e-8
-iter_max = 4
+iter_max = 10
 
 # Template for files with results
 prefix = 'data_scott_vogelius_stokes_%d.txt'

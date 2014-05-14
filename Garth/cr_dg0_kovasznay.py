@@ -28,7 +28,7 @@ tol = 1.e-4
 iter_max = 50
 
 # Template for files with results
-prefix = 'data_cr_dg0_kowasznay.txt'
+prefix = 'data_cr_dg0_kovasznay.txt'
 
 error_u = []
 error_p = []

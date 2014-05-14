@@ -28,7 +28,7 @@ tol = 1.e-4
 iter_max = 50
 
 # Template for files with results
-prefix = 'data_bubble_dg1_kowasznay.txt'
+prefix = 'data_bubble_dg1_kovasznay.txt'
 
 error_u = []
 error_p = []

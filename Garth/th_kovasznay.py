@@ -28,7 +28,7 @@ tol = 1.e-4
 iter_max = 50
 
 # Template for files with results
-prefix = 'data_th_kowasznay_%d.txt'
+prefix = 'data_th_kovasznay_%d.txt'
 
 # Loop over polynomial degrees
 for k in [1, 2, 3, 4]:
