@@ -26,7 +26,8 @@ def corners(x, on_boundary):
             for X in [x_min, x_max] for Y in [y_min, y_max])
 
 # Scott-Vogelius iteration parameters
-r = 1.e3 # default value
+r = 1.e3     # default value of penalty paramater
+r_max = 1e12 # maximum value of penalty parameter
 tol = 1.e-8
 iter_max = 4
 
@@ -71,7 +72,9 @@ for k in [1, 2, 3, 4, 5]:
         # S-V loop
         solver = LUSolver('mumps')
         converged = False
-        while not converged:
+        # Remember the default penalty value
+        r_ = float(r)
+        while not converged and r_ < r_max:
             print 'Using penalty parameter', float(r)
             iter = 0
             while iter < iter_max:
@@ -101,11 +104,12 @@ for k in [1, 2, 3, 4, 5]:
                 if converged : break
 
             # Run againg with new penalty parameter
-            r.assign(float(r)*10)
-            print 'Increased penalty parameter %g\n' % float(r)
+            r_ *= 10
+            r.assign(r_)
+            print 'Increased penalty parameter %g\n' % r_
 
         # Store the final penalty and iteration count
-        penalties.append((float(r)/10, iter))
+        penalties.append((r_/10, iter))
 
         # Compute L2 velocity error
         u_diff = Uh - u_exact
