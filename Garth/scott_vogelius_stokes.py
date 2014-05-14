@@ -113,7 +113,7 @@ for k in [1, 2, 3, 4, 5]:
                 print 'Increased penalty parameter %.2e\n' % r_
 
         # Store the final penalty and iteration count
-        penalties.append((r_/10, iter))
+        penalties.append((r_, iter))
 
         # Compute L2 velocity error
         u_diff = Uh - u_exact
