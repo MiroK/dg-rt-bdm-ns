@@ -17,7 +17,7 @@ Re = 40.
 A = Re/2 - pow(pow(Re/2, 2) + pow(2*pi, 2), 0.5)
 u_exact = Expression(('1-exp(A*x[0])*cos(2*pi*x[1])',
                       'A*exp(A*x[0])*sin(2*pi*x[1])/(2*pi)'), A=A, degree=8)
-p_exact = Expression('-0.5*(1-exp(2*A*x[0]))', A=A, degree=8)
+p_exact = Expression('0.5*(1-exp(2*A*x[0]))', A=A, degree=8)
 
 
 # Geometry parameters
@@ -68,8 +68,8 @@ for k in [4, 5][:1]:
 
         Re = Constant(Re)
 
-        a = inner(dot(grad(u), u0), v)*dx + 1./Re*inner(grad(u), grad(v))*dx\
-            - rho*inner(div(u), div(v))*dx
+        a = inner(div(outer(u, u0)), v)*dx + 1./Re*inner(grad(u), grad(v))*dx\
+            + rho*inner(div(u), div(v))*dx
 
         L = inner(f, v)*dx + inner(div(w), div(v))*dx
 
@@ -91,7 +91,7 @@ for k in [4, 5][:1]:
             solve(A, uh.vector(), b)
 
             # Update w
-            w.vector().axpy(float(rho), uh.vector())
+            w.vector().axpy(1, uh.vector())
 
             # Stopping criteria
             e_pickard, e_sv = None, None
@@ -109,9 +109,9 @@ for k in [4, 5][:1]:
                 converged = e_sv < tol_sv and e_pickard < tol_pickard
 
         # Compute the pressure
-        Q = FunctionSpace(mesh, 'DG', k-1)
+        Q = FunctionSpace(mesh, 'DG', 0)
         bc_p = DirichletBC(Q, p_exact, corners, 'pointwise')
-        ph = project(div(w)/rho, Q, bc_p)
+        ph = project(div(w), Q, bc_p)
 
         print sqrt(abs(assemble(div(uh)**2*dx)))
 
