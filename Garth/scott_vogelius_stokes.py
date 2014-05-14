@@ -145,4 +145,4 @@ for k in [1, 2, 3, 4, 5]:
     penalty_file = 'penalties_scott_vogelius_stokes_%d.txt' % k
     with open(penalty_file, 'w') as file:
         for h, (a, n) in zip(hs, penalties):
-            file.write('%e %e(%d)\n' % (h, a, n))
+            file.write('%e %e %d\n' % (h, a, n))
