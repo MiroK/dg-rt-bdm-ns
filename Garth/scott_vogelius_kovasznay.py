@@ -91,7 +91,10 @@ for k in [4, 5]:
 
                 # Solve variational problem
                 try:
-                    solve(F == 0, u, bc_u)
+                    solve(F == 0, u, bc_u,
+                          solver_parameters=
+                          {'newton_solver': {'relative_tolerance':  1E-7,
+                                             'linear_solver': 'mumps'}})
                 except RuntimeError:
                     u.vector().zero()
                     u0.vector().zero()
