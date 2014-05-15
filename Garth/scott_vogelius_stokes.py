@@ -30,7 +30,7 @@ def corners(x, on_boundary):
 r = 1.e3      # default value of penalty paramater
 r_max = 1e12  # maximum value of penalty parameter
 tol = 1.e-8
-iter_max = 10
+iter_max = 100
 
 # Template for files with results
 prefix = 'data_scott_vogelius_stokes_%d.txt'
@@ -110,6 +110,7 @@ for k in [1, 2, 3, 4, 5]:
             if not converged:
                 r_ *= 10
                 rho.assign(r_)
+                w.vector().zero()
                 print 'Increased penalty parameter %.2e\n' % r_
 
         # Store the final penalty and iteration count

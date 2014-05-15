@@ -30,7 +30,8 @@ def corners(x, on_boundary):
                for X in [x_min, x_max] for Y in [y_min, y_max])
 
 # Scott-Vogelius iteration parameters
-r = 1E3    # default penalty parameter
+r = 1E3       # default penalty parameter
+r_max = 1e12  # maximum value of penalty parameter
 tol = 1.e-8
 iter_max = 100
 
@@ -39,7 +40,11 @@ prefix = 'data_scott_vogelius_kovasznay_%d.txt'
 
 # Loop over polynomial degrees
 for k in [4, 5]:
+    error_u = []
+    error_p = []
+    error_div = []
     hs = []
+    penalties = []
 
     # Loop over meshes
     for n in [16, 32, 64, 128]:
@@ -69,43 +74,83 @@ for k in [4, 5]:
         # Current and previous solutions in S-V loop
         u0 = Function(V)
 
-        # S-V and Pickad loops
-        iter = 0
+        # Scott-Vogelius loop
         converged = False
-        while not converged and iter < iter_max:
+        r_ = r  # remember the degault penalty
+        while not converged and r_ < r_max:
+            print 'Using penalty parameter %.2e\n' % r_
+            iter = 0
 
-            iter += 1
-            print  iter
+            while iter < iter_max:
 
-            # Assign previous
-            u0.assign(u)
+                iter += 1
+                print iter
 
-            # Solve variational problem
-            solve(F == 0, u, bc_u)
+                # Assign previous
+                u0.assign(u)
 
-            # Update w
-            w.vector().axpy(float(rho), u.vector())
+                # Solve variational problem
+                try:
+                    solve(F == 0, u, bc_u)
+                except RuntimeError:
+                    u.vector().zero()
+                    u0.vector().zero()
+                    break
 
-            # Stopping criteria
-            e_sv = None
-            if iter < 2:
-                converged = False
-            else:
-                e_sv = (u.vector() - u0.vector()).norm('l2')
+                # Update w
+                w.vector().axpy(float(rho), u.vector())
 
-                print e_sv
+                # Stopping criteria
+                e_sv = None
+                if iter < 2:
+                    converged = False
+                else:
+                    e_sv = (u.vector() - u0.vector()).norm('l2')
+                    converged = e_sv < tol
+                print '\t', e_sv
 
-                converged = e_sv < tol
+                if converged:
+                    break
+
+            # Run againg with new penalty parameter
+            if not converged:
+                r_ *= 10
+                rho.assign(r_)
+                w.vector().zero()
+                print 'Increased penalty parameter %.2e\n' % r_
+
+        # Store the final penalty and iteration count
+        penalties.append((r_, iter))
 
         # Compute the pressure
         Q = FunctionSpace(mesh, 'DG', k-1)
         bc_p = DirichletBC(Q, p_exact, corners, 'pointwise')
-        ph = project(div(w), Q, bc_p)
+        p = project(div(w), Q, bc_p)
 
-        print sqrt(abs(assemble(div(u)**2*dx)))
+        # Compute L2 velocity error
+        u_diff = u - u_exact
+        u_error = sqrt(abs(assemble(dot(u_diff, u_diff)*dx, mesh=mesh)))
 
-        plot(u-u_exact)
-        plot(ph)
-        plot(p_exact, mesh=mesh)
-        interactive()
+        # Compute L2 pressure error
+        p_diff = p - p_exact
+        p_error = sqrt(abs(assemble(p_diff*p_diff*dx, mesh=mesh)))
 
+        # Compute divergence error
+        div_error = sqrt(abs(assemble(div(u)*div(u)*dx, mesh=mesh)))
+
+        # Store the norms for h
+        error_u.append(u_error)
+        error_p.append(p_error)
+        error_div.append(div_error)
+        hs.append(h)
+
+    # Store results to files
+    data_file = prefix % k
+    with open(data_file, 'w') as file:
+        for row in zip(hs, error_u, error_p, error_div):
+            file.write('%e %e %e %e\n' % row)
+
+    penalty_file = 'penalties_scott_vogelius_kovasznay_%d.txt' % k
+    with open(penalty_file, 'w') as file:
+        for h, (a, n) in zip(hs, penalties):
+            file.write('%e %e %d\n' % (h, a, n))
