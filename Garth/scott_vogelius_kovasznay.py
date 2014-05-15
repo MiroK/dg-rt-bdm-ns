@@ -29,21 +29,20 @@ def corners(x, on_boundary):
     return any(near(x[0], X) and near(x[1], Y)
                for X in [x_min, x_max] for Y in [y_min, y_max])
 
-# Pickard, Scott-Vogelius iteration parameters
+# Scott-Vogelius iteration parameters
 r = 1E3    # default penalty parameter
-tol_sv = 1.e-8
-tol_pickard = 1.e-4
+tol = 1.e-8
 iter_max = 100
 
 # Template for files with results
 prefix = 'data_scott_vogelius_kovasznay_%d.txt'
 
 # Loop over polynomial degrees
-for k in [4, 5][:1]:
+for k in [4, 5]:
     hs = []
 
     # Loop over meshes
-    for n in [16, 32, 64, 128][2:3]:
+    for n in [16, 32, 64, 128]:
         M = n/k
         N = 3*M/2
         mesh = RectangleMesh(x_min, y_min, x_max, y_max, M, N)
@@ -51,29 +50,24 @@ for k in [4, 5][:1]:
 
         # Solve only for velocity. Pressure is obtained in postprocessing
         V = VectorFunctionSpace(mesh, 'CG', k)
-        u = TrialFunction(V)
+        u = Function(V)
         v = TestFunction(V)
 
+        # Boundary conditions
         bc_u = DirichletBC(V, u_exact, DomainBoundary())
 
         # Penalty parameter
         rho = Constant(r)
 
-        # Vector for divergence term
+        # Divergence sum
         w = Function(V)
 
-        # Current and previous solutions
-        uh = Function(V)
+        F = inner(div(outer(u, u)), v)*dx + 1./Re*inner(grad(u), grad(v))*dx \
+            - rho*inner(div(u), div(v))*dx - inner(div(w), div(v))*dx -\
+            inner(f, v)*dx
+
+        # Current and previous solutions in S-V loop
         u0 = Function(V)
-
-        Re = Constant(Re)
-
-        a = inner(div(outer(u, u0)), v)*dx + 1./Re*inner(grad(u), grad(v))*dx\
-            + rho*inner(div(u), div(v))*dx
-
-        L = inner(f, v)*dx + inner(div(w), div(v))*dx
-
-        solver = LUSolver('mumps')
 
         # S-V and Pickad loops
         iter = 0
@@ -84,38 +78,33 @@ for k in [4, 5][:1]:
             print  iter
 
             # Assign previous
-            u0.assign(uh)
+            u0.assign(u)
 
             # Solve variational problem
-            A, b = assemble_system(a, L, bc_u)
-            solve(A, uh.vector(), b)
+            solve(F == 0, u, bc_u)
 
             # Update w
-            w.vector().axpy(1, uh.vector())
+            w.vector().axpy(float(rho), u.vector())
 
             # Stopping criteria
-            e_pickard, e_sv = None, None
+            e_sv = None
             if iter < 2:
                 converged = False
             else:
-                e_sv = (uh.vector() - u0.vector()).norm('l2')
+                e_sv = (u.vector() - u0.vector()).norm('l2')
 
-                e = norm(uh, 'L2')
-                e0 = norm(u0, 'L2')
-                e_pickard = abs(e - e0)/(e + e0)
+                print e_sv
 
-                print e_sv, e_pickard
-
-                converged = e_sv < tol_sv and e_pickard < tol_pickard
+                converged = e_sv < tol
 
         # Compute the pressure
-        Q = FunctionSpace(mesh, 'DG', 0)
+        Q = FunctionSpace(mesh, 'DG', k-1)
         bc_p = DirichletBC(Q, p_exact, corners, 'pointwise')
         ph = project(div(w), Q, bc_p)
 
-        print sqrt(abs(assemble(div(uh)**2*dx)))
+        print sqrt(abs(assemble(div(u)**2*dx)))
 
-        plot(uh-u_exact)
+        plot(u-u_exact)
         plot(ph)
         plot(p_exact, mesh=mesh)
         interactive()
