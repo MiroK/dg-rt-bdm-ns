@@ -39,7 +39,7 @@ iter_max = 100
 prefix = 'data_scott_vogelius_kovasznay_%d.txt'
 
 # Loop over polynomial degrees
-for k in [4, 5]:
+for k in [1]:
     error_u = []
     error_p = []
     error_div = []
@@ -54,7 +54,7 @@ for k in [4, 5]:
         h = mesh.hmin()
 
         # Solve only for velocity. Pressure is obtained in postprocessing
-        V = VectorFunctionSpace(mesh, 'CG', k)
+        V = VectorFunctionSpace(mesh, 'CR', k)
         u = Function(V)
         v = TestFunction(V)
 
@@ -93,7 +93,8 @@ for k in [4, 5]:
                 try:
                     solve(F == 0, u, bc_u,
                           solver_parameters=
-                          {'newton_solver': {'relative_tolerance':  1E-7,
+                          {'newton_solver': {'relative_tolerance': 1E-6,
+					     'absolute_tolerance': 1E-6,
                                              'linear_solver': 'mumps'}})
                 except RuntimeError:
                     u.vector().zero()
@@ -104,12 +105,8 @@ for k in [4, 5]:
                 w.vector().axpy(float(rho), u.vector())
 
                 # Stopping criteria
-                e_sv = None
-                if iter < 2:
-                    converged = False
-                else:
-                    e_sv = (u.vector() - u0.vector()).norm('l2')
-                    converged = e_sv < tol
+                e_sv = (u.vector() - u0.vector()).norm('l2')
+                converged = e_sv < tol
                 print '\t', e_sv
 
                 if converged:
@@ -126,7 +123,15 @@ for k in [4, 5]:
         penalties.append((r_, iter))
 
         # Compute the pressure
-        Q = FunctionSpace(mesh, 'DG', k-1)
+        Q = FunctionSpace(mesh, 'DG', 0)
+
+	# With velocity k=4, 5 in CG, the pressure in CG/DG k-1 is not correct!
+	# With celocity k=2, 3 in CG, pressure in CG k-1 seems most reasonable,
+	# that is there are refinements where the pressure convgerges.
+        # Also, CR1-DG0 pair does not deliver. 
+	# Overall, the penalty approch seems more suitable for stokes then
+	# navier-stokes
+        # RT 1, 2, 3 and DG k-1 is wrong also
         bc_p = DirichletBC(Q, p_exact, corners, 'pointwise')
         p = project(div(w), Q, bc_p)
 
