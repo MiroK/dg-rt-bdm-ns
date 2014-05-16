@@ -2,7 +2,6 @@ from dolfin import *
 import time
 
 # TODO
-# Add biharmonic
 # Test effect of stab. parameters of DG problem
 
 
@@ -244,10 +243,99 @@ class Timeit(object):
         self.timing = time.time() - self.start
         return False
 
+
+def dg_poisson_eigenvalues(alpha_value, mesh_size=32):
+    'Eigenvalues of -laplace(u) = lambda*u in [0, 1]'
+
+    mesh = UnitIntervalMesh(mesh_size)
+
+    # Define DG parameters
+    n = FacetNormal(mesh)
+    h = CellSize(mesh)
+    alpha = Constant(alpha_value)
+    gamma = Constant(2*alpha_value)
+
+    a_form = lambda u, v: dot(grad(v), grad(u))*dx\
+        - dot(avg(grad(v)), jump(u, n))*dS\
+        - dot(jump(v, n), avg(grad(u)))*dS\
+        + avg(alpha)/avg(h)*dot(jump(v, n), jump(u, n))*dS\
+        - dot(grad(v), u*n)*ds\
+        - dot(v*n, grad(u))*ds\
+        + gamma/h*v*u*ds
+
+    m_form = lambda u, v: (inner(grad(u), grad(v)))*dx\
+        + 1.0/(avg(h))*dot(jump(v, n), jump(u, n))*dS \
+        + 1.0/h*dot(v*n, u*n)*ds
+
+    V = FunctionSpace(mesh, 'DG', 1)
+
+    numeric = eigenproblem_lambda_min_max(a_form, m_form, V, bcs=None)
+
+    # Witness the effect
+    dg_poisson_problem(alpha_value, mesh_size)
+
+    print 'Numeric: %.6g %.2g' % numeric
+
+
+def dg_poisson_problem(alpha_value, mesh_size):
+    'Demo ...'
+    # Create mesh and define function space
+    mesh = UnitSquareMesh(mesh_size, mesh_size)
+    V = FunctionSpace(mesh, 'DG', 1)
+
+    # Define test and trial functions
+    v = TestFunction(V)
+    u = TrialFunction(V)
+
+    # Define normal component, mesh size and right-hand side
+    n = FacetNormal(mesh)
+    h = CellSize(mesh)
+    h_avg = (h('+') + h('-'))/2
+    f = Expression('500.0*exp(-(pow(x[0]-0.5, 2) + pow(x[1]-0.5, 2)) / 0.02)')
+
+    # Define parameters
+    alpha = Constant(alpha_value)
+    gamma = Constant(2*alpha_value)
+
+    # Define variational problem
+    a = dot(grad(v), grad(u))*dx\
+        - dot(avg(grad(v)), jump(u, n))*dS\
+        - dot(jump(v, n), avg(grad(u)))*dS\
+        + avg(alpha)/h_avg*dot(jump(v, n), jump(u, n))*dS\
+        - dot(grad(v), u*n)*ds\
+        - dot(v*n, grad(u))*ds\
+        + gamma/h*v*u*ds
+
+    L = v*f*dx
+
+    # Compute solution
+    u = Function(V)
+    solve(a == L, u)
+
+    # Project solution to piecewise linears
+    u_proj = project(u)
+    # Plot solution
+    plot(u_proj, interactive=True, title='%g' % alpha_value)
+
+
 if __name__ == '__main__':
+    # Test
     # poisson_eigenvalues()
 
+    # This has no bcs on purpose!
+    # for alpha 1, 0 there are complex eigs and there are negative lmbda max
+    # Only for alpha=0 lmbda_min = 1E-16 (until then about 1E-9) and the
+    # solution has visible oscillations
+    # for alpha in [128, 64, 32, 16, 8, 7, 6, 5, 4, 3, 2, 1, 0]:
+    #    print 'alpha =', alpha
+    #    biharmonic_eigenvalues(alpha_value=alpha)
+    #    print
+
+    # Only alpha=0,1 have zeros in spectrum
+    # alpha=0 ---> 1E-11, larger oscllation near bdr
+    # alpah=1 ---> 1E-17, very small oscillation near bdr
+    # Only alpha=0 has negative lambda_min
     for alpha in [128, 64, 32, 16, 8, 7, 6, 5, 4, 3, 2, 1, 0]:
-        print 'alpha=', alpha
-        biharmonic_eigenvalues(alpha_value=alpha)
+        print 'alpha =', alpha
+        dg_poisson_eigenvalues(alpha_value=alpha)
         print
