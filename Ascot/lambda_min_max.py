@@ -6,7 +6,7 @@ import time
 # Test effect of stab. parameters of DG problem
 
 
-def eigenproblem_solver(a_form, m_form, V, bcs=None, n=None):
+def eigenproblem_solver(a_form, m_form, V, bcs=None, n=None, symmetric=True):
     '''Get (n) largest and smallest eigenvaues of generalized eigenvalue
     problem'''
 
@@ -19,15 +19,23 @@ def eigenproblem_solver(a_form, m_form, V, bcs=None, n=None):
 
     A = PETScMatrix()
     M = PETScMatrix()
+    b = PETScVector()
 
-    assemble(a_form(u, v), tensor=A)
-    assemble(m_form(u, v), tensor=M)
+    if symmetric:
+        # Fake linear form for assemble_system
+        L = lambda v: inner(Constant(0, V.cell()), v)*dx
 
-    if bcs is not None:
-        assert isinstance(bcs, list)
-        for bc in bcs:
-            bc.apply(A)
-            bc.apply(M)
+        assemble_system(a_form(u, v), L(v), bcs, A_tensor=A, b_tensor=b)
+        assemble_system(m_form(u, v), L(v), bcs, A_tensor=M, b_tensor=b)
+    else:
+        assemble(a_form(u, v), tensor=A)
+        assemble(m_form(u, v), tensor=M)
+
+        if bcs is not None:
+            assert isinstance(bcs, list)
+            for bc in bcs:
+                bc.apply(A)
+                bc.apply(M)
 
     # Get number of eigs to compute
     N = A.size(0)
@@ -49,7 +57,7 @@ def eigenproblem_solver(a_form, m_form, V, bcs=None, n=None):
     with Timeit() as t:
         eigensolver_min.solve(n)
         m_min = eigensolver_min.get_number_converged()
-    print 'Done in %gs.' % t.timing
+    print 'Done in %gs.\n' % t.timing
 
     # Get largest eigs
     eigensolver_max = SLEPcEigenSolver(A, M)
@@ -63,7 +71,7 @@ def eigenproblem_solver(a_form, m_form, V, bcs=None, n=None):
     with Timeit() as t:
         eigensolver_max.solve(n)
         m_max = eigensolver_max.get_number_converged()
-    print 'Done in %gs.' % t.timing
+    print 'Done in %gs.\n' % t.timing
 
     i = 0
     n_returned = min(n, m_max, m_min)
@@ -77,7 +85,7 @@ def eigenproblem_lambda_min_max(a_form, m_form, V, bcs=None):
     'Compute largest and smallest eigenvalue of gener. eigenvalue problem.'
 
     # Get eigenvalues. Take n_eigs to see some trends maybe.
-    n_eigs = 3
+    n_eigs = 8
     eigs = eigenproblem_solver(a_form, m_form, V, bcs=bcs, n=n_eigs)
     lambda_min, lambda_max = [], []
     for x, y in eigs:
@@ -85,7 +93,7 @@ def eigenproblem_lambda_min_max(a_form, m_form, V, bcs=None):
         lambda_max.append(y)
 
     # Postproces
-    ZERO = 1e-10
+    ZERO = 1e-3*V.mesh().hmin()
     is_zero = lambda z: abs(z) < ZERO
     is_real = lambda z: is_zero(z[1])
     get_real = lambda z: z[0]
@@ -96,8 +104,11 @@ def eigenproblem_lambda_min_max(a_form, m_form, V, bcs=None):
         print 'Complex spectrum!'
 
     # Keep only real part of spectrum
-    lambda_min = map(get_real, lambda_min)
-    lambda_max = map(get_real, lambda_max)
+    lambda_min = sorted(map(get_real, lambda_min), key=abs)
+    lambda_max = sorted(map(get_real, lambda_max), key=abs, reverse=True)
+
+    print 'lambda min', lambda_min
+    print 'lambda max', lambda_max
 
     if max(abs(lambda_min[0]), abs(lambda_max[0])) < ZERO:
         print 'Zero spectrum'
@@ -130,14 +141,97 @@ def poisson_eigenvalues(mesh_size=1000):
     bc = DirichletBC(V, Constant(0.), DomainBoundary())
 
     # Exact eigenvalues of continous well-posed problem are (k*pi)**2
+    # k = 1, k = (2*pi/2*h) = pi/h
     h = mesh.hmin()
     numeric = eigenproblem_lambda_min_max(a_form, m_form, V, bcs=[bc])
-    exact = pi**2, (pi/h)**2
+    exact = pi**2, (pi*pi/h)**2
     # No bcs -- constant vector in the nullspace, i.e. there is lambda = 0
-    # With bcs -- there is some scaling difference but okay for now
+    # Symmetry in applying bcs does not seem to change eigenvalues at all
+    # Interesting that the spectrum is (ones, smallest analytic, ...)
+    # and there is about factor 8 difference ... maybe exact continuous vs.
+    # exact discrete
+    # Ones correspond to eigenvectors which can't be resolved by mesh, i.e.
+    # they have too small wavelength (less then 2*h)
 
-    print 'Numeric: %.2f %.2f' % numeric
-    print 'Exact:   %.2f %.2f' % exact
+    print 'Numeric: %.6g %.2g' % numeric
+    print 'Exact:   %.6g %.2g' % exact
+
+
+def biharmonic_eigenvalues(alpha_value, mesh_size=32):
+    'Eigenvalues of del**4 = lambda*u in [0, 1]**2'
+
+    mesh = UnitSquareMesh(mesh_size, mesh_size)
+    h = CellSize(mesh)
+    h_avg = (h('+') + h('-'))/2.0
+    n = FacetNormal(mesh)
+
+    # Penalty parameter
+    alpha = Constant(alpha_value)
+
+    a_form = lambda u, v: inner(div(grad(u)), div(grad(v)))*dx \
+        - inner(avg(div(grad(u))), jump(grad(v), n))*dS \
+        - inner(jump(grad(u), n), avg(div(grad(v))))*dS \
+        + alpha('+')/h_avg*inner(jump(grad(u), n), jump(grad(v), n))*dS
+
+    m_form = lambda u, v: inner(u, v)*dx
+
+    V = FunctionSpace(mesh, 'CG', 2)
+    bc = DirichletBC(V, Constant(0.), DomainBoundary())
+
+    numeric = eigenproblem_lambda_min_max(a_form, m_form, V, bcs=None)
+    # Symmetry in applying bcs does not seem to change eigenvalues at all
+    # Interesting that the spectrum is (3*onnes, smallest analytic, ...)
+    # its probably for same reasons as poisson
+    # No bcs -- problem should be singular - it's apperant in 2d,
+    # not so much in 1d
+
+    # See the effect of alpha on the solution
+    biharmonic_problem(alpha_value, mesh_size)
+
+    print '%.6g %.2g' % numeric
+
+
+def biharmonic_problem(alpha_value, mesh_size):
+    'Demo ...'
+    # Create mesh and define function space
+    mesh = UnitSquareMesh(mesh_size, mesh_size)
+    V = FunctionSpace(mesh, "CG", 2)
+
+    class Source(Expression):
+        def eval(self, values, x):
+            values[0] = 4.0*pi**4*sin(pi*x[0])*sin(pi*x[1])
+
+    # Define boundary condition
+    bc = DirichletBC(V, Constant(0.), DomainBoundary())
+
+    # Define trial and test functions
+    u = TrialFunction(V)
+    v = TestFunction(V)
+
+    # Define normal component, mesh size and right-hand side
+    h = CellSize(mesh)
+    h_avg = (h('+') + h('-'))/2.0
+    n = FacetNormal(mesh)
+    f = Expression('4.0*pi*pi*pi*pi*sin(pi*x[0])*sin(pi*x[1])')
+
+    # Penalty parameter
+    alpha = Constant(alpha_value)
+
+    # Define bilinear form
+    a = inner(div(grad(u)), div(grad(v)))*dx\
+        - inner(avg(div(grad(u))), jump(grad(v), n))*dS\
+        - inner(jump(grad(u), n), avg(div(grad(v))))*dS\
+        + alpha('+')/h_avg*inner(jump(grad(u), n), jump(grad(v), n))*dS
+
+    # Define linear form
+    L = f*v*dx
+
+    # Solve variational problem
+    u = Function(V)
+    solve(a == L, u, bc)
+
+    # Plot solution
+    plot(u, interactive=True, title='%g' % alpha_value)
 
 
 class Timeit(object):
@@ -151,4 +245,9 @@ class Timeit(object):
         return False
 
 if __name__ == '__main__':
-    poisson_eigenvalues()
+    # poisson_eigenvalues()
+
+    for alpha in [128, 64, 32, 16, 8, 7, 6, 5, 4, 3, 2, 1, 0]:
+        print 'alpha=', alpha
+        biharmonic_eigenvalues(alpha_value=alpha)
+        print
